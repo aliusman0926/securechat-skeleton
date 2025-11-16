@@ -1,0 +1,20 @@
+# Ignore certs directory (keys and certificates)
+certs/
+
+# Ignore environment files with secrets
+.env
+
+# Ignore Python caches
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignore logs and transcripts
+*.log
+transcript_*.txt
+
+# Ignore MySQL dumps if created locally
+*.sql
+
+# Ignore venv
+venv/
