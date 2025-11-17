@@ -40,8 +40,27 @@ class PreMessage(BaseModel):
     type: Literal["register", "login"]
     email: str = Field(..., pattern=EMAIL_REGEX)
 
+# --- add after LoginMessage ---
+class ChatMessage(BaseModel):
+    type: Literal["msg"]
+    content: str                     # plain text from user
+    seqno: int = Field(..., ge=1)
+    ts: int = Field(..., ge=0)       # milliseconds since epoch
+    sig: str                         # base64-encoded RSA signature
+
+    @validator('content')
+    def no_newline(cls, v):
+        if '\n' in v:
+            raise ValueError("content must not contain newline")
+        return v
+
+class ReceiptMessage(BaseModel):
+    type: Literal["receipt"]
+    transcript_hash: str  # hex SHA-256
+    sig: str              # base64 RSA signature of the hash
+
 # Union type for control plane messages
-ControlMessage = HelloMessage | ServerHelloMessage | RegisterMessage | LoginMessage
+ControlMessage = HelloMessage | ServerHelloMessage | RegisterMessage | LoginMessage | ChatMessage
 
 # Helper to parse JSON into correct model
 def parse_control_message(data: dict) -> ControlMessage:

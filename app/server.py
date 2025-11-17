@@ -5,10 +5,11 @@ import json
 import os
 import secrets
 from app.common.protocol import ServerHelloMessage, parse_control_message, PreMessage
-from app.common.utils import random_nonce, base64_encode, send_binary, recv_binary, base64_decode
+from app.common.utils import random_nonce, base64_encode, send_binary, recv_binary, base64_decode, now_ms
 from app.crypto.pki import verify_certificate_chain
 from app.crypto.dh import generate_dh_keypair, derive_shared_secret
 from app.crypto.aes import encrypt_aes, decrypt_aes
+from app.crypto.sign import rsa_verify
 from app.storage.db import register_user, verify_login, get_connection, DB_NAME
 import sys
 
@@ -159,6 +160,123 @@ def main():
             session_key = derive_shared_secret(server_sess_priv, client_sess_pub)
             print("Session key K established.")
             sys.stdout.flush()
+
+            # -------------------------------------------------
+            #  CHAT LOOP (server, fixed signature)
+            # -------------------------------------------------
+            from app.common.chat import build_chat_message, sign_chat_message, compute_transcript_hash, build_receipt
+            from app.common.input_thread import start_input_thread
+            import queue
+            import select
+
+            seqno = 1
+            transcript = []
+            input_queue = queue.Queue()
+            start_input_thread(input_queue)
+
+            print("\n=== Secure Chat ===")
+            while True:
+                # --- Server input ---
+                try:
+                    line = input_queue.get_nowait()
+                except queue.Empty:
+                    line = None
+                else:
+                    msg = build_chat_message(line, seqno, server_private_pem)
+                    msg["sig"] = sign_chat_message(msg, server_private_pem)
+                    payload = json.dumps(msg, separators=(',', ':')).encode()
+                    transcript.append(payload)
+                    send_binary(conn, encrypt_aes(session_key, payload))
+                    print(f"Server: {line}")
+                    seqno += 1
+
+                # --- Client message ---
+                rlist, _, _ = select.select([conn], [], [], 0.1)
+                if rlist:
+                    try:
+                        enc = recv_binary(conn)
+                        payload_bytes = decrypt_aes(session_key, enc)
+                        received = json.loads(payload_bytes.decode())
+                        sig = received.pop("sig")
+
+                        signed_json = json.dumps(received, separators=(',', ':')).encode()
+
+                        if not rsa_verify(client_cert_pem, signed_json, sig):
+                            print("[!] Client signature invalid")
+                            continue
+                        if received["seqno"] != seqno:
+                            print(f"[!] Client seqno {received['seqno']} != {seqno}")
+                            continue
+                        if abs(received["ts"] - now_ms()) > 5000:
+                            print("[!] Client message stale")
+                            continue
+
+                        transcript.append(payload_bytes)
+                        print(f"Client: {received['content']}")
+                        seqno += 1
+
+                        if received["content"].lower() == "bye":
+                            # --- Send bye ---
+                            bye_msg = build_chat_message("bye", seqno, server_private_pem)
+                            bye_msg["sig"] = sign_chat_message(bye_msg, server_private_pem)
+                            bye_payload = json.dumps(bye_msg, separators=(',', ':')).encode()
+                            transcript.append(bye_payload)
+                            send_binary(conn, encrypt_aes(session_key, bye_payload))
+                            print("Server: bye")
+                            seqno += 1
+
+                            # --- Receive client receipt ---
+                            enc = recv_binary(conn)
+                            client_receipt_bytes = decrypt_aes(session_key, enc)
+                            client_receipt = json.loads(client_receipt_bytes.decode())
+                            client_sig = client_receipt.pop("sig", None)
+                            client_hash = client_receipt.get("transcript_hash")
+
+                            # --- Compute hash ---
+                            transcript_hash = compute_transcript_hash(transcript)
+
+                            if (client_hash == transcript_hash and client_sig and
+                                rsa_verify(client_cert_pem, client_hash.encode(), client_sig)):
+                                print("Client receipt verified.")
+                            else:
+                                print("Client receipt INVALID!")
+
+                            # --- Send server receipt ---
+                            receipt = build_receipt(transcript_hash, server_private_pem)
+                            receipt_payload = json.dumps(receipt, separators=(',', ':')).encode()
+                            send_binary(conn, encrypt_aes(session_key, receipt_payload))
+                            print(f"Sent receipt (hash: {transcript_hash[:16]}...)")
+
+                            # --- Save ---
+                            os.makedirs("logs", exist_ok=True)
+                            with open("logs/transcript.txt", "w") as f:
+                                for msg in transcript:
+                                    try:
+                                        f.write(json.loads(msg.decode())["content"] + "\n")
+                                    except:
+                                        pass
+                                                    # --- Save full signed transcript ---
+                            with open("logs/transcript_signed.json", "w") as f:
+                                msgs = []
+                                for b in transcript:
+                                    try:
+                                        msgs.append(json.loads(b.decode()))
+                                    except:
+                                        pass
+                                json.dump(msgs, f, indent=2)
+                            with open("logs/receipt_server.json", "w") as f:
+                                json.dump(receipt, f, indent=2)
+                            with open("logs/receipt_client.json", "w") as f:
+                                json.dump(client_receipt, f, indent=2)
+                            print("Saved transcript and receipts.")
+                            break
+                        
+                    except Exception as e:
+                        print(f"[!] Server receive error: {e}")
+                        break
+            # -------------------------------------------------
+            # END OF CHAT LOOP (server, Windows-safe)
+            # -------------------------------------------------
 
 if __name__ == "__main__":
     main()
