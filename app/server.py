@@ -134,9 +134,31 @@ def main():
             else:
                 response = b"FAIL_UNKNOWN"
 
+            # 6. Send final response (encrypted)
             encrypted_response = encrypt_aes(aes_key, response)
             send_binary(conn, encrypted_response)
             print(f"Response: {response.decode()}")
+
+            if response != b"SUCCESS":
+                return
+
+            # === KEY AGREEMENT PHASE ===
+            print("Starting session key agreement...")
+            sys.stdout.flush()
+
+            # Receive client's session DH public key
+            enc_client_sess_pub = recv_binary(conn)
+            client_sess_pub = decrypt_aes(aes_key, enc_client_sess_pub)
+            print("Received client session DH public key")
+
+            # Generate server DH keypair
+            server_sess_priv, server_sess_pub = generate_dh_keypair()
+            send_binary(conn, encrypt_aes(aes_key, server_sess_pub))
+            print("Sent server session DH public key")
+
+            session_key = derive_shared_secret(server_sess_priv, client_sess_pub)
+            print("Session key K established.")
+            sys.stdout.flush()
 
 if __name__ == "__main__":
     main()

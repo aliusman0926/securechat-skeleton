@@ -115,5 +115,25 @@ def main():
             response = decrypt_aes(aes_key, enc_final_resp).decode()
             print("Server:", response)
 
+            if response != "SUCCESS":
+                continue  # retry login/register
+
+            # === KEY AGREEMENT PHASE ===
+            print("Starting session key agreement...")
+            sys.stdout.flush()
+
+            # Generate new DH keypair for session
+            client_sess_priv, client_sess_pub = generate_dh_keypair()
+            send_binary(s, encrypt_aes(aes_key, client_sess_pub))
+            print("Sent session DH public key (encrypted)")
+
+            enc_server_sess_pub = recv_binary(s)
+            server_sess_pub = decrypt_aes(aes_key, enc_server_sess_pub)
+            print("Received server session DH public key")
+
+            session_key = derive_shared_secret(client_sess_priv, server_sess_pub)
+            print("Session key K established.")
+            sys.stdout.flush()
+
 if __name__ == "__main__":
     main()
