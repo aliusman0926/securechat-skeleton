@@ -224,7 +224,7 @@ def main():
                                     f.write(json.loads(msg.decode())["content"] + "\n")
                                 except:
                                     pass
-                                                # --- Save full signed transcript ---
+                        # --- Save full signed transcript ---
                         with open("logs/transcript_signed.json", "w") as f:
                             msgs = []
                             for b in transcript:
@@ -235,8 +235,6 @@ def main():
                             json.dump(msgs, f, indent=2)
                         with open("logs/receipt_client.json", "w") as f:
                             json.dump(receipt, f, indent=2)
-                        with open("logs/receipt_server.json", "w") as f:
-                            json.dump(server_receipt, f, indent=2)
                         print("Saved transcript and receipts in logs/")
                         break
 

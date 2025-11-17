@@ -266,8 +266,6 @@ def main():
                                 json.dump(msgs, f, indent=2)
                             with open("logs/receipt_server.json", "w") as f:
                                 json.dump(receipt, f, indent=2)
-                            with open("logs/receipt_client.json", "w") as f:
-                                json.dump(client_receipt, f, indent=2)
                             print("Saved transcript and receipts.")
                             break
                         
