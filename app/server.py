@@ -255,7 +255,7 @@ def main():
                                         f.write(json.loads(msg.decode())["content"] + "\n")
                                     except:
                                         pass
-                                                    # --- Save full signed transcript ---
+                            # --- Save full signed transcript ---
                             with open("logs/transcript_signed.json", "w") as f:
                                 msgs = []
                                 for b in transcript:
