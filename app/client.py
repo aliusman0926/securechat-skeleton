@@ -31,6 +31,10 @@ def recv_text_line(s):
 
 def main():
     client_cert = load_cert(os.path.join(CERTS_DIR, 'client_cert.pem'))
+    client_key_path = os.path.join(CERTS_DIR, 'client_key.pem')
+    with open(client_key_path, 'rb') as f:
+        client_private_pem = f.read()
+    print("Client private key loaded.")
 
     while True:
         action = input("Register, Login, or Exit? (r/l/e): ").strip().lower()
@@ -54,6 +58,8 @@ def main():
             if not verify_certificate_chain(server_hello.server_cert.encode(), is_server=True):
                 print("Server cert invalid!")
                 continue
+            server_cert_pem = server_hello.server_cert.encode()
+            print("Server cert stored.")
 
             # 3. DH (binary)
             print("Starting DH exchange on client")

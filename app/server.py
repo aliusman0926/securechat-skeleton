@@ -42,6 +42,10 @@ def get_stored_salt(email: str) -> str | None:
 
 def main():
     server_cert = load_cert(os.path.join(CERTS_DIR, 'server_cert.pem'))
+    server_key_path = os.path.join(CERTS_DIR, 'server_key.pem')
+    with open(server_key_path, 'rb') as f:
+        server_private_pem = f.read()
+    print("Server private key loaded.")
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -62,6 +66,8 @@ def main():
             if not verify_certificate_chain(hello.client_cert.encode(), is_server=False):
                 print("Client cert invalid!")
                 return
+            client_cert_pem = hello.client_cert.encode()
+            print("Client cert stored.")
 
             # 2. Send Server Hello (text)
             nonce = random_nonce()
