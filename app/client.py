@@ -1,7 +1,105 @@
-"""Client skeleton — plain TCP; no TLS. See assignment spec."""
+"""Client workflow — plain TCP, no TLS."""
+
+import socket
+import json
+import os
+import hashlib
+import secrets
+from app.common.protocol import HelloMessage, RegisterMessage, LoginMessage, parse_control_message
+from app.common.utils import random_nonce, base64_encode, base64_decode, send_binary, recv_binary
+from app.crypto.pki import verify_certificate_chain
+from app.crypto.dh import generate_dh_keypair, derive_shared_secret
+from app.crypto.aes import encrypt_aes, decrypt_aes
+import sys
+
+HOST = '127.0.0.1'
+PORT = 4444
+CERTS_DIR = 'certs'
+
+def load_cert(path: str) -> str:
+    with open(path, 'r') as f:
+        return f.read()
+
+def recv_text_line(s):
+    data = b""
+    while not data.endswith(b'\n'):
+        chunk = s.recv(1)
+        if not chunk:
+            raise ConnectionError("Closed")
+        data += chunk
+    return data.strip()
 
 def main():
-    raise NotImplementedError("students: implement client workflow")
+    client_cert = load_cert(os.path.join(CERTS_DIR, 'client_cert.pem'))
+
+    while True:
+        action = input("Register, Login, or Exit? (r/l/e): ").strip().lower()
+        if action == 'e':
+            print("Exiting...")
+            break
+        elif action not in ['r', 'l']:
+            print("Invalid choice. Try again.")
+            continue
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((HOST, PORT))
+
+            # 1. Send Hello (text)
+            hello = HelloMessage(type="hello", client_cert=client_cert, nonce=random_nonce())
+            s.sendall(json.dumps(hello.model_dump()).encode() + b'\n')
+
+            # 2. Receive Server Hello (text)
+            data = recv_text_line(s).decode()
+            server_hello = parse_control_message(json.loads(data))
+            if not verify_certificate_chain(server_hello.server_cert.encode(), is_server=True):
+                print("Server cert invalid!")
+                continue
+
+            # 3. DH (binary)
+            print("Starting DH exchange on client")
+            sys.stdout.flush()
+            client_dh_priv, client_dh_pub = generate_dh_keypair()
+            send_binary(s, client_dh_pub)
+            print("Sent client DH pub")
+            sys.stdout.flush()
+            server_dh_pub = recv_binary(s)
+            print("Received server DH pub")
+            sys.stdout.flush()
+            aes_key = derive_shared_secret(client_dh_priv, server_dh_pub)
+
+            print("Control plane key established.")
+            sys.stdout.flush()
+
+            # 4. Receive Salt (binary encrypted)
+            print("Waiting for salt")
+            sys.stdout.flush()
+            enc_salt = recv_binary(s)
+            print("Received enc_salt")
+            sys.stdout.flush()
+            salt_b64 = decrypt_aes(aes_key, enc_salt).decode()
+            print("Decrypted salt")
+            sys.stdout.flush()
+
+            # 5. User Input
+            email = input("Email: ")
+            pwd = input("Password: ")
+            username = input("Username: ") if action == 'r' else ""
+
+            pwd_hash = hashlib.sha256(base64_decode(salt_b64) + pwd.encode()).digest()
+            pwd_b64 = base64_encode(pwd_hash)
+
+            if action == 'r':
+                msg = RegisterMessage(type="register", email=email, username=username, pwd=pwd_b64, salt=salt_b64)
+            else:
+                msg = LoginMessage(type="login", email=email, pwd=pwd_b64, nonce=random_nonce())
+
+            encrypted_msg = encrypt_aes(aes_key, json.dumps(msg.model_dump()).encode())
+            send_binary(s, encrypted_msg)
+
+            # 6. Response (binary encrypted)
+            enc_resp = recv_binary(s)
+            response = decrypt_aes(aes_key, enc_resp).decode()
+            print("Server:", response)
 
 if __name__ == "__main__":
     main()
