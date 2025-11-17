@@ -32,7 +32,6 @@ def send_binary(sock, data: bytes):
 
 def recv_binary(sock) -> bytes:
     length_bytes = b""
-    print("Receiving binary data...")
     while len(length_bytes) < 4:
         chunk = sock.recv(4 - len(length_bytes))
         if not chunk:
@@ -40,11 +39,9 @@ def recv_binary(sock) -> bytes:
         length_bytes += chunk
     length = int.from_bytes(length_bytes, 'big')
     data = b""
-    print(f"Expecting {length} bytes...")
     while len(data) < length:
         chunk = sock.recv(length - len(data))
         if not chunk:
             raise ConnectionError("Connection closed")
         data += chunk
-    print("Binary data received.")
     return data

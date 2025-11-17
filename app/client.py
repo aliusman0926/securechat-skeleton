@@ -41,6 +41,7 @@ def main():
         action = input("Register, Login, or Exit? (r/l/e): ").strip().lower()
         if action == 'e':
             print("Exiting...")
+            return
             break
         elif action not in ['r', 'l']:
             print("Invalid choice. Try again.")
@@ -85,7 +86,6 @@ def main():
             send_binary(s, encrypted_pre)
 
             # 5. Receive salt or fail (binary encrypted)
-            print("Waiting for response")
             sys.stdout.flush()
             enc_resp = recv_binary(s)
             resp = decrypt_aes(aes_key, enc_resp)
@@ -94,7 +94,6 @@ def main():
                 continue
 
             salt_b64 = resp.decode()
-            print("Received salt")
 
             # 6. User Input for full message
             pwd = input("Password: ")
@@ -168,7 +167,6 @@ def main():
                         seqno += 1
 
                         # --- Wait for server bye ---
-                        print("Waiting for server to say bye...")
                         while True:
                             rlist, _, _ = select.select([s], [], [], 1.0)
                             if not rlist:
