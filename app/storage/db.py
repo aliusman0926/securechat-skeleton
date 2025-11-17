@@ -76,7 +76,7 @@ def register_user(email: str, username: str, hash_b64: str, salt_b64: str) -> bo
     finally:
         conn.close()
 
-def verify_login(email: str, pwd_b64: str, salt_b64: str) -> str | None:
+def verify_login(email: str, pwd_b64: str, nonce: str) -> str | None:
     """Verify login. Returns username or None."""
     try:
         # Client sent: base64(sha256(salt || pwd))

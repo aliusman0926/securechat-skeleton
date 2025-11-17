@@ -70,18 +70,26 @@ def main():
             print("Control plane key established.")
             sys.stdout.flush()
 
-            # 4. Receive Salt (binary encrypted)
-            print("Waiting for salt")
-            sys.stdout.flush()
-            enc_salt = recv_binary(s)
-            print("Received enc_salt")
-            sys.stdout.flush()
-            salt_b64 = decrypt_aes(aes_key, enc_salt).decode()
-            print("Decrypted salt")
-            sys.stdout.flush()
-
-            # 5. User Input
+            # 4. User Input for pre-message
             email = input("Email: ")
+
+            pre_dict = {"type": "register" if action == 'r' else "login", "email": email}
+            encrypted_pre = encrypt_aes(aes_key, json.dumps(pre_dict).encode())
+            send_binary(s, encrypted_pre)
+
+            # 5. Receive salt or fail (binary encrypted)
+            print("Waiting for response")
+            sys.stdout.flush()
+            enc_resp = recv_binary(s)
+            resp = decrypt_aes(aes_key, enc_resp)
+            if resp.startswith(b"FAIL"):
+                print("Error:", resp.decode())
+                continue
+
+            salt_b64 = resp.decode()
+            print("Received salt")
+
+            # 6. User Input for full message
             pwd = input("Password: ")
             username = input("Username: ") if action == 'r' else ""
 
@@ -96,9 +104,9 @@ def main():
             encrypted_msg = encrypt_aes(aes_key, json.dumps(msg.model_dump()).encode())
             send_binary(s, encrypted_msg)
 
-            # 6. Response (binary encrypted)
-            enc_resp = recv_binary(s)
-            response = decrypt_aes(aes_key, enc_resp).decode()
+            # 7. Response (binary encrypted)
+            enc_final_resp = recv_binary(s)
+            response = decrypt_aes(aes_key, enc_final_resp).decode()
             print("Server:", response)
 
 if __name__ == "__main__":

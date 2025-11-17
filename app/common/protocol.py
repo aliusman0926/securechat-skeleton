@@ -36,6 +36,10 @@ class LoginMessage(BaseModel):
     pwd: str = Field(..., description="base64(sha256(salt || pwd))")
     nonce: str = Field(..., description="Base64-encoded nonce")
 
+class PreMessage(BaseModel):
+    type: Literal["register", "login"]
+    email: str = Field(..., pattern=EMAIL_REGEX)
+
 # Union type for control plane messages
 ControlMessage = HelloMessage | ServerHelloMessage | RegisterMessage | LoginMessage
 

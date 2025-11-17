@@ -4,7 +4,7 @@ import socket
 import json
 import os
 import secrets
-from app.common.protocol import ServerHelloMessage, parse_control_message
+from app.common.protocol import ServerHelloMessage, parse_control_message, PreMessage
 from app.common.utils import random_nonce, base64_encode, send_binary, recv_binary, base64_decode
 from app.crypto.pki import verify_certificate_chain
 from app.crypto.dh import generate_dh_keypair, derive_shared_secret
@@ -83,33 +83,23 @@ def main():
             print("Control plane key established.")
             sys.stdout.flush()
 
-            # 4. Send Salt (binary encrypted)
-            print("Generating salt")
-            sys.stdout.flush()
-            salt = secrets.token_bytes(16)
-            salt_b64 = base64_encode(salt)
-            encrypted_salt = encrypt_aes(aes_key, salt_b64.encode())
-            print("Sending salt")
-            sys.stdout.flush()
-            send_binary(conn, encrypted_salt)
-            print("Sent salt")
-            sys.stdout.flush()
-
             # 4. Receive pre-message (encrypted)
             enc_pre = recv_binary(conn)
             pre_json = decrypt_aes(aes_key, enc_pre).decode()
-            pre_msg = json.loads(pre_json)
+            pre_msg = PreMessage(**json.loads(pre_json))  # Use PreMessage for validation
             print(pre_msg)
 
-            type_ = pre_msg["type"]
-            email = pre_msg["email"]
+            type_ = pre_msg.type
+            email = pre_msg.email
 
             if type_ == "register":
                 # Check if email exists
                 if get_stored_salt(email):
                     response = b"FAIL_DUPLICATE"
                 else:
-                    response = b"OK"
+                    salt = secrets.token_bytes(16)
+                    salt_b64 = base64_encode(salt)
+                    response = salt_b64.encode()
             elif type_ == "login":
                 salt_b64 = get_stored_salt(email)
                 if salt_b64:
@@ -121,11 +111,13 @@ def main():
 
             send_binary(conn, encrypt_aes(aes_key, response))
 
-            if response in [b"FAIL_DUPLICATE", b"FAIL_NOT_FOUND", b"FAIL_UNKNOWN"]:
+            if response.startswith(b"FAIL"):
                 return
 
             # 5. Receive main message (encrypted)
-            msg = parse_control_message(json.loads(pre_json))
+            enc_main = recv_binary(conn)
+            main_json = decrypt_aes(aes_key, enc_main).decode()
+            msg = parse_control_message(json.loads(main_json))
 
             if msg.type == "register":
                 success = register_user(msg.email, msg.username, msg.pwd, msg.salt)
@@ -139,5 +131,6 @@ def main():
             encrypted_response = encrypt_aes(aes_key, response)
             send_binary(conn, encrypted_response)
             print(f"Response: {response.decode()}")
+
 if __name__ == "__main__":
     main()
